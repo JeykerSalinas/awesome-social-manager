@@ -1,0 +1,42 @@
+services:
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      DATABASE_PATH: /app/data/app.db
+      STORAGE_PATH: /app/storage
+      API_HOST: 0.0.0.0
+      API_PORT: 3001
+    volumes:
+      - app-data:/app/data
+      - app-storage:/app/storage
+    ports:
+      - "3001:3001"
+
+  worker:
+    build:
+      context: .
+      target: worker
+    environment:
+      DATABASE_PATH: /app/data/app.db
+      STORAGE_PATH: /app/storage
+      EMBEDDING_PROVIDER: local
+    volumes:
+      - app-data:/app/data
+      - app-storage:/app/storage
+    depends_on:
+      - api
+
+  web:
+    build:
+      context: .
+      target: web
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+volumes:
+  app-data:
+  app-storage:
