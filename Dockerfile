@@ -5,7 +5,9 @@ COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/worker/package.json apps/worker/package.json
 COPY packages/core/package.json packages/core/package.json
-RUN npm ci --omit=optional
+# Rollup, Sharp and Better SQLite ship platform binaries as optional packages.
+# Omitting optional dependencies makes the build succeed on the host but fail in Linux.
+RUN npm ci --include=optional
 COPY apps ./apps
 COPY packages ./packages
 RUN npm run build
