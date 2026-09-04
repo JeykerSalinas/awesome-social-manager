@@ -1,0 +1,14 @@
+{
+  "name": "@asm/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": { "@asm/core": "*" },
+  "devDependencies": { "tsup": "^8.5.0" }
+}

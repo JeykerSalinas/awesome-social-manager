@@ -1,15 +1,24 @@
 {
   "name": "awesome-social-manager",
-  "version": "1.0.0",
-  "main": "index.js",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "npm run build -w @asm/core && npm run build -w @asm/api && npm run build -w @asm/worker && npm run build -w @asm/web",
+    "dev:api": "npm run build -w @asm/core && npm run dev -w @asm/api",
+    "dev:web": "npm run dev -w @asm/web",
+    "dev:worker": "npm run build -w @asm/core && npm run dev -w @asm/worker",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
-  "dependencies": {
-    "@zernio/node": "^0.2.688"
-  }
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": { "node": ">=22" }
 }
