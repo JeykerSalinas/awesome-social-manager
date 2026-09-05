@@ -41,6 +41,8 @@ interface Group {
 }
 
 const apiUrl = (import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "http://localhost:3001" : window.location.origin)).replace(/\/$/, "");
+const maxFiles = Number(import.meta.env.VITE_UPLOAD_MAX_FILES || 200);
+const maxFileSizeMb = Number(import.meta.env.VITE_UPLOAD_MAX_FILE_SIZE_MB || 100);
 const batches = ref<Batch[]>([]);
 const selectedBatch = ref<Batch | null>(null);
 const groups = ref<Group[]>([]);
@@ -76,7 +78,7 @@ async function upload() {
   selectedFiles.value.forEach((file) => form.append("files", file));
   try {
     const response = await fetch(`${apiUrl}/api/batches`, { method: "POST", body: form });
-    const result = await response.json();
+    const result = await readResponse(response);
     if (!response.ok) throw new Error(result.message || "No se pudo crear el lote");
     selectedFiles.value = [];
     batchName.value = "";
@@ -152,6 +154,13 @@ function stopPolling() {
   pollTimer = undefined;
 }
 
+async function readResponse(response: Response) {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) return response.json();
+  const text = await response.text();
+  return { message: response.status === 413 ? "La carga supera el límite permitido." : text || response.statusText };
+}
+
 function media(path: string | null) {
   return path ? `${apiUrl}${path}` : "";
 }
@@ -199,7 +208,7 @@ function statusLabel(status: string) {
         >
           <span class="plus">＋</span>
           <strong>Arrastra tus fotografías</strong>
-          <small>JPEG o PNG · máximo 50 · 25 MB por archivo</small>
+          <small>JPEG o PNG · máximo {{ maxFiles }} · {{ maxFileSizeMb }} MB por archivo</small>
         </button>
         <input ref="fileInput" class="hidden" type="file" accept="image/jpeg,image/png" multiple @change="chooseFiles" />
         <div v-if="selectedFiles.length" class="selection-row">

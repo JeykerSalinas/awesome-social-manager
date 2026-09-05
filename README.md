@@ -4,7 +4,7 @@ MVP de curación editorial que transforma un lote de fotografías en grupos revi
 
 Esta primera vertical implementa:
 
-- carga de hasta 50 imágenes JPEG/PNG con validación de contenido real;
+- carga configurable de imágenes JPEG/PNG con validación de contenido real;
 - almacenamiento de originales inmutables y miniaturas;
 - extracción de fecha, GPS y cámara desde EXIF;
 - hash perceptual, nitidez, exposición, contraste y puntuación técnica;
@@ -34,6 +34,13 @@ npm run dev:web
 ```
 
 Abre `http://localhost:5173`.
+
+Los límites de carga predeterminados son 200 imágenes y 100 MB por archivo. Se pueden ajustar con:
+
+```bash
+UPLOAD_MAX_FILES=300 UPLOAD_MAX_FILE_SIZE_MB=150 npm run dev:api
+VITE_UPLOAD_MAX_FILES=300 VITE_UPLOAD_MAX_FILE_SIZE_MB=150 npm run dev:web
+```
 
 El modo predeterminado usa un descriptor visual local ligero y no requiere claves. Para usar embeddings CLIP:
 

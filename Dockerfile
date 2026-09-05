@@ -10,6 +10,10 @@ COPY packages/core/package.json packages/core/package.json
 RUN npm ci --include=optional
 COPY apps ./apps
 COPY packages ./packages
+ARG VITE_UPLOAD_MAX_FILES=200
+ARG VITE_UPLOAD_MAX_FILE_SIZE_MB=100
+ENV VITE_UPLOAD_MAX_FILES=$VITE_UPLOAD_MAX_FILES
+ENV VITE_UPLOAD_MAX_FILE_SIZE_MB=$VITE_UPLOAD_MAX_FILE_SIZE_MB
 RUN npm run build
 
 FROM node:24-bookworm-slim AS api

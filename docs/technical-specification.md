@@ -64,7 +64,7 @@ Construir una aplicacion web de una sola cuenta que convierta lotes de fotografi
 
 # 4. Flujo principal del usuario
 
-1.  Crear un lote y subir entre 1 y 50 fotografias.
+1.  Crear un lote y subir fotografias dentro del limite configurado por despliegue.
 
 2.  Visualizar progreso de carga y procesamiento por archivo.
 
@@ -376,7 +376,7 @@ Cada operacion asincrona debe registrar correlationId, batchId, assetId/proposal
 
 | **ID** | **Criterio**                                                                               |
 |--------|--------------------------------------------------------------------------------------------|
-| AC-01  | Se pueden cargar 1-50 JPEG/PNG y los invalidos se identifican individualmente.             |
+| AC-01  | Se pueden cargar JPEG/PNG dentro del limite configurado y los invalidos se identifican individualmente. |
 | AC-02  | El procesamiento continua en segundo plano y el progreso sobrevive a una recarga.          |
 | AC-03  | El lote termina con grupos revisables y una explicacion minima por grupo.                  |
 | AC-04  | Cada propuesta contiene 1-10 imagenes, portada, orden y caption editable.                  |

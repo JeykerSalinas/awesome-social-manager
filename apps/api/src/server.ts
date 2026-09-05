@@ -11,11 +11,14 @@ import { openDatabase, type AssetFeatures } from "@asm/core";
 export const app = Fastify({ logger: process.env.NODE_ENV !== "test", requestIdHeader: "x-correlation-id" });
 const db = openDatabase();
 const storageRoot = resolve(process.env.STORAGE_PATH || "./storage");
+const maxFiles = Number(process.env.UPLOAD_MAX_FILES || 200);
+const maxFileSizeMb = Number(process.env.UPLOAD_MAX_FILE_SIZE_MB || 100);
+const maxFileSizeBytes = maxFileSizeMb * 1024 * 1024;
 await mkdir(storageRoot, { recursive: true });
 
 await app.register(cors, { origin: true });
 await app.register(multipart, {
-  limits: { files: 50, fileSize: 25 * 1024 * 1024, parts: 55 },
+  limits: { files: maxFiles, fileSize: maxFileSizeBytes, parts: maxFiles + 5 },
 });
 await app.register(fastifyStatic, { root: storageRoot, prefix: "/media/" });
 
@@ -138,11 +141,13 @@ app.delete<{ Params: { id: string } }>("/api/batches/:id", async (request, reply
 app.setErrorHandler((error, request, reply) => {
   request.log.error(error);
   const errorCode = typeof error === "object" && error && "code" in error ? String(error.code) : "";
-  const isLimit = errorCode.startsWith("FST_REQ_FILE_TOO_LARGE") || errorCode.startsWith("FST_FILES_LIMIT");
+  const isLimit = errorCode.startsWith("FST_REQ_FILE_TOO_LARGE") ||
+    errorCode.startsWith("FST_FILES_LIMIT") ||
+    errorCode.startsWith("FST_PARTS_LIMIT");
   reply.code(isLimit ? 413 : 500).send(errorBody(
     request.id,
     isLimit ? "UPLOAD_LIMIT" : "INTERNAL_ERROR",
-    isLimit ? "La carga supera el límite de 50 archivos o 25 MB por archivo" : "No se pudo completar la operación",
+    isLimit ? `La carga supera el límite de ${maxFiles} archivos o ${maxFileSizeMb} MB por archivo` : "No se pudo completar la operación",
   ));
 });
 

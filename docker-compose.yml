@@ -8,6 +8,8 @@ services:
       STORAGE_PATH: /app/storage
       API_HOST: 0.0.0.0
       API_PORT: 3001
+      UPLOAD_MAX_FILES: 200
+      UPLOAD_MAX_FILE_SIZE_MB: 100
     volumes:
       - app-data:/app/data
       - app-storage:/app/storage
@@ -32,6 +34,9 @@ services:
     build:
       context: .
       target: web
+      args:
+        VITE_UPLOAD_MAX_FILES: 200
+        VITE_UPLOAD_MAX_FILE_SIZE_MB: 100
     ports:
       - "8080:80"
     depends_on:
