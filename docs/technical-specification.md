@@ -10,7 +10,7 @@ Dashboard inteligente para seleccionar, proponer y publicar contenido fotografic
 
 **Fecha:** 02/09/2026
 
-**Stack objetivo:** Vue 3 + Node.js + TypeScript + Zernio
+**Stack objetivo:** Vue 3 + Node.js + TypeScript + Gemini + Zernio
 
 | **DECISION PRINCIPAL** El MVP recibe archivos locales, analiza y agrupa fotografias de forma asincrona, genera borradores editables y solo publica o programa en Instagram cuando el usuario confirma la accion. |
 |------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -26,6 +26,8 @@ Construir una aplicacion web de una sola cuenta que convierta lotes de fotografi
 - Extraccion de metadatos tecnicos y EXIF disponibles, sin depender de ellos para funcionar.
 
 - Analisis visual, calculo de similitud y agrupacion por lugar, momento, apariencia e iluminacion.
+
+- Deteccion conservadora de fotos similares, conservando la mejor toma y excluyendo duplicadas sin borrar originales.
 
 - Generacion de una o varias propuestas de post por lote, con portada, orden y caption sugerido.
 
@@ -64,7 +66,7 @@ Construir una aplicacion web de una sola cuenta que convierta lotes de fotografi
 
 # 4. Flujo principal del usuario
 
-1.  Crear un lote y subir entre 1 y 50 fotografias.
+1.  Crear un lote y subir fotografias dentro del limite configurado por despliegue.
 
 2.  Visualizar progreso de carga y procesamiento por archivo.
 
@@ -155,6 +157,8 @@ El proveedor debe responder JSON validado con Zod. Si una localizacion no puede 
 
 La agrupacion debe combinar senales; no se delega completamente a un LLM. Se propone clustering por densidad o jerarquico sobre un vector compuesto. Cuando falte GPS, sus pesos se redistribuyen entre fecha, embedding y etiquetas visuales.
 
+El proveedor de embeddings puede ser local, CLIP o Gemini. Con Gemini se usa `gemini-embedding-2` para obtener embeddings multimodales de previews JPEG; el clustering sigue ejecutandose localmente para mantener trazabilidad y control.
+
 | **Senal**            | **Peso inicial** | **Uso**                                        |
 |----------------------|------------------|------------------------------------------------|
 | Distancia geografica | 35%              | GPS y geocodificacion inversa cuando existan.  |
@@ -165,6 +169,18 @@ La agrupacion debe combinar senales; no se delega completamente a un LLM. Se pro
 
 | **REGLA DE NEGOCIO** Un carrusel admite hasta 10 medios. Los grupos de mas de 10 fotos deben dividirse en propuestas coherentes o solicitar seleccion manual. |
 |---------------------------------------------------------------------------------------------------------------------------------------------------------------|
+
+## 6.3 Deduplicacion conservadora
+
+La primera version no elimina archivos automaticamente. Dentro de cada lote, el worker detecta duplicados mediante hash perceptual, embedding visual y proximidad temporal. Para cada conjunto de fotos similares conserva la imagen con mejor puntuacion tecnica, nitidez, exposicion y resolucion, y marca las demas como no seleccionadas.
+
+Los originales permanecen inmutables en almacenamiento. La interfaz debe mostrar las fotos similares atenuadas y permitir restaurarlas manualmente antes de cualquier propuesta o publicacion.
+
+## 6.4 Contexto y captions con Gemini
+
+Cuando `CAPTION_PROVIDER=gemini`, el worker envia hasta 10 previews seleccionadas por grupo a Gemini y solicita una salida JSON estructurada. La respuesta se guarda como contexto de grupo y propuesta editable. Las fotos excluidas como similares no se envian al generador de captions.
+
+El prompt debe prohibir inventar nombres de ciudades, monumentos o eventos cuando no exista evidencia visual suficiente. Los captions, hashtags y textos alternativos se consideran borradores y requieren revision humana.
 
 # 7. Motor de propuestas
 
@@ -200,7 +216,7 @@ Cada grupo puede producir cero, una o varias propuestas. El motor debe explicar 
 | Asset         | id, batchId, originalPath, mime, size, width, height, hash                        | Original inmutable.                 |
 | AssetAnalysis | assetId, exif, vision, embeddingRef, quality                                      | Versionado por modelo/prompt.       |
 | Group         | id, batchId, label, place, confidence, status                                     | Agrupacion editable.                |
-| GroupAsset    | groupId, assetId, order, selected                                                 | Relacion y orden manual.            |
+| GroupAsset    | groupId, assetId, order, selected, duplicateOfAssetId, duplicateReason            | Relacion, orden manual y deduplicacion conservadora. |
 | PostProposal  | id, groupId, caption, status, coverAssetId                                        | Borrador editable.                  |
 | ProposalAsset | proposalId, assetId, order, transform                                             | Carrusel y derivados.               |
 | Job           | id, type, status, attempts, error, payload                                        | Trabajo asincrono persistente.      |
@@ -223,6 +239,7 @@ Cada grupo puede producir cero, una o varias propuestas. El motor debe explicar 
 | DELETE     | /api/batches/:id               | Eliminar lote, metadatos y archivos.      |
 | GET        | /api/batches/:id/groups        | Listar grupos y propuestas.               |
 | PATCH      | /api/groups/:id                | Renombrar o ajustar grupo.                |
+| PATCH      | /api/groups/:groupId/assets/:assetId | Restaurar o excluir manualmente una foto. |
 | POST       | /api/groups/:id/proposals      | Regenerar propuestas.                     |
 | PATCH      | /api/proposals/:id             | Caption, portada, orden y seleccion.      |
 | POST       | /api/proposals/:id/publish     | Publicar ahora o programar mediante mode. |
@@ -376,7 +393,7 @@ Cada operacion asincrona debe registrar correlationId, batchId, assetId/proposal
 
 | **ID** | **Criterio**                                                                               |
 |--------|--------------------------------------------------------------------------------------------|
-| AC-01  | Se pueden cargar 1-50 JPEG/PNG y los invalidos se identifican individualmente.             |
+| AC-01  | Se pueden cargar JPEG/PNG dentro del limite configurado y los invalidos se identifican individualmente. |
 | AC-02  | El procesamiento continua en segundo plano y el progreso sobrevive a una recarga.          |
 | AC-03  | El lote termina con grupos revisables y una explicacion minima por grupo.                  |
 | AC-04  | Cada propuesta contiene 1-10 imagenes, portada, orden y caption editable.                  |
