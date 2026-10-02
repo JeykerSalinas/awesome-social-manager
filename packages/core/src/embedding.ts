@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { GeminiEmbeddingProvider } from "./gemini.js";
 
 export interface EmbeddingProvider {
   readonly name: string;
@@ -46,7 +47,7 @@ export class ClipEmbeddingProvider implements EmbeddingProvider {
 }
 
 export function createEmbeddingProvider(): EmbeddingProvider {
-  return process.env.EMBEDDING_PROVIDER === "clip"
-    ? new ClipEmbeddingProvider()
-    : new LocalVisualEmbeddingProvider();
+  if (process.env.EMBEDDING_PROVIDER === "clip") return new ClipEmbeddingProvider();
+  if (process.env.EMBEDDING_PROVIDER === "gemini") return new GeminiEmbeddingProvider();
+  return new LocalVisualEmbeddingProvider();
 }

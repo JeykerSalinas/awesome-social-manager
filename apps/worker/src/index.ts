@@ -1,14 +1,24 @@
+import { config } from "dotenv";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import {
   analyzeImage,
   clusterAssets,
+  createCaptionProvider,
   createEmbeddingProvider,
+  deduplicateAssets,
   openDatabase,
   type AppDatabase,
   type AssetFeatures,
+  type CaptionProposal,
   type ClusterInput,
+  type GroupImageInput,
 } from "@asm/core";
+
+if (process.env.NODE_ENV !== "test") {
+  config({ path: resolve(process.cwd(), ".env") });
+  config({ path: resolve(process.cwd(), "../../.env") });
+}
 
 interface JobRow {
   id: string;
@@ -26,10 +36,11 @@ interface AssetRow {
 
 const db = openDatabase();
 const embeddingProvider = createEmbeddingProvider();
+const captionProvider = createCaptionProvider();
 const pollMs = Number(process.env.WORKER_POLL_MS || 1500);
 let active = true;
 
-console.log(`[worker] ready; embedding provider=${embeddingProvider.name}`);
+console.log(`[worker] ready; embedding provider=${embeddingProvider.name}; caption provider=${captionProvider?.name ?? "none"}`);
 process.once("SIGTERM", () => { active = false; });
 process.once("SIGINT", () => { active = false; });
 
@@ -104,12 +115,17 @@ async function processBatch(database: AppDatabase, batchId: string): Promise<voi
   if (!clusterInputs.length) throw new Error("No image could be analyzed");
   updateBatch(database, batchId, "ANALYZING", 90, null);
   const groups = clusterAssets(clusterInputs);
+  const duplicateDecisions = new Map(deduplicateAssets(clusterInputs).map((decision) => [decision.assetId, decision]));
+  const savedGroups: Array<{ groupId: string; assetIds: string[] }> = [];
   database.transaction(() => {
     database.prepare("DELETE FROM groups WHERE batch_id = ?").run(batchId);
     const insertGroup = database.prepare(`
       INSERT INTO groups (id, batch_id, label, confidence, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)
     `);
-    const insertAsset = database.prepare(`INSERT INTO group_assets (group_id, asset_id, position) VALUES (?, ?, ?)`);
+    const insertAsset = database.prepare(`
+      INSERT INTO group_assets (group_id, asset_id, position, selected, duplicate_of_asset_id, duplicate_reason)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
     const markGrouped = database.prepare("UPDATE assets SET status = 'GROUPED' WHERE id = ?");
     for (const group of groups) {
       const groupId = randomUUID();
@@ -119,18 +135,125 @@ async function processBatch(database: AppDatabase, batchId: string): Promise<voi
         const b = clusterInputs.find((item) => item.assetId === right)?.features;
         return sortAssets(a, b);
       });
+      savedGroups.push({ groupId, assetIds: orderedIds });
       orderedIds.forEach((assetId, position) => {
-        insertAsset.run(groupId, assetId, position);
+        const decision = duplicateDecisions.get(assetId);
+        insertAsset.run(
+          groupId,
+          assetId,
+          position,
+          decision?.selected === false ? 0 : 1,
+          decision?.duplicateOfAssetId ?? null,
+          decision?.duplicateReason ?? null,
+        );
         markGrouped.run(assetId);
       });
     }
   })();
+  if (captionProvider) {
+    updateBatch(database, batchId, "ANALYZING", 96, null);
+    for (const group of savedGroups) {
+      const selectedImages = group.assetIds
+        .filter((assetId) => duplicateDecisions.get(assetId)?.selected !== false)
+        .map((assetId) => toGroupImageInput(assetId, assets, clusterInputs))
+        .filter((image): image is GroupImageInput => Boolean(image))
+        .sort(sortGroupImages)
+        .slice(0, 10);
+      if (!selectedImages.length) continue;
+      try {
+        console.log(`[worker] generating caption for group ${group.groupId}; images=${selectedImages.length}; provider=${captionProvider.name}`);
+        const proposal = await captionProvider.describeGroup(selectedImages);
+        saveProposal(database, group.groupId, captionProvider.name, proposal);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[worker] caption generation failed for group ${group.groupId}: ${message}`);
+        saveCaptionError(database, group.groupId, captionProvider.name, message);
+      }
+    }
+  }
   updateBatch(database, batchId, "READY", 100, null);
 }
 
 function sortAssets(left?: AssetFeatures, right?: AssetFeatures): number {
   if (left?.capturedAt && right?.capturedAt) return left.capturedAt.localeCompare(right.capturedAt);
   return (right?.qualityScore ?? 0) - (left?.qualityScore ?? 0);
+}
+
+function toGroupImageInput(
+  assetId: string,
+  assets: AssetRow[],
+  clusterInputs: ClusterInput[],
+): GroupImageInput | null {
+  const asset = assets.find((item) => item.id === assetId);
+  const input = clusterInputs.find((item) => item.assetId === assetId);
+  if (!asset || !input) return null;
+  return {
+    assetId,
+    path: resolve(process.env.STORAGE_PATH || "./storage", asset.batch_id, "thumbnails", `${asset.id}.jpg`),
+    mime: "image/jpeg",
+    qualityScore: input.features.qualityScore,
+    capturedAt: input.features.capturedAt,
+  };
+}
+
+function sortGroupImages(left: GroupImageInput, right: GroupImageInput): number {
+  if (left.capturedAt && right.capturedAt) return left.capturedAt.localeCompare(right.capturedAt);
+  return right.qualityScore - left.qualityScore;
+}
+
+function saveProposal(database: AppDatabase, groupId: string, provider: string, proposal: CaptionProposal): void {
+  const now = new Date().toISOString();
+  database.transaction(() => {
+    database.prepare(`
+      INSERT INTO group_contexts (group_id, provider, model, context_json, created_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(group_id) DO UPDATE SET
+        provider = excluded.provider,
+        model = excluded.model,
+        context_json = excluded.context_json,
+        created_at = excluded.created_at
+    `).run(groupId, provider, provider, JSON.stringify({
+      groupLabel: proposal.groupLabel,
+      context: proposal.context,
+      confidence: proposal.confidence,
+    }), now);
+    database.prepare("DELETE FROM post_proposals WHERE group_id = ? AND status = 'DRAFT'").run(groupId);
+    database.prepare(`
+      INSERT INTO post_proposals (
+        id, group_id, caption, hashtags_json, alt_text_json, status, provider, model, confidence, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      randomUUID(),
+      groupId,
+      proposal.caption,
+      JSON.stringify(proposal.hashtags),
+      JSON.stringify(proposal.altText),
+      "DRAFT",
+      provider,
+      provider,
+      proposal.confidence,
+      now,
+      now,
+    );
+  })();
+}
+
+function saveCaptionError(database: AppDatabase, groupId: string, provider: string, message: string): void {
+  const now = new Date().toISOString();
+  database.prepare(`
+    INSERT INTO group_contexts (group_id, provider, model, context_json, created_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(group_id) DO UPDATE SET
+      provider = excluded.provider,
+      model = excluded.model,
+      context_json = excluded.context_json,
+      created_at = excluded.created_at
+  `).run(groupId, provider, provider, JSON.stringify({
+    error: message,
+    groupLabel: null,
+    context: null,
+    confidence: 0,
+  }), now);
 }
 
 function updateBatch(database: AppDatabase, id: string, status: string, progress: number, error: string | null) {

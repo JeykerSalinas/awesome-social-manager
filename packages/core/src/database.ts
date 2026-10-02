@@ -58,7 +58,30 @@ function migrate(db: AppDatabase): void {
       group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
       asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
       position INTEGER NOT NULL,
+      selected INTEGER NOT NULL DEFAULT 1,
+      duplicate_of_asset_id TEXT,
+      duplicate_reason TEXT,
       PRIMARY KEY (group_id, asset_id)
+    );
+    CREATE TABLE IF NOT EXISTS group_contexts (
+      group_id TEXT PRIMARY KEY REFERENCES groups(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      context_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS post_proposals (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      caption TEXT NOT NULL,
+      hashtags_json TEXT NOT NULL,
+      alt_text_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      confidence REAL NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS jobs (
       id TEXT PRIMARY KEY,
@@ -75,4 +98,14 @@ function migrate(db: AppDatabase): void {
     CREATE INDEX IF NOT EXISTS idx_groups_batch ON groups(batch_id);
     CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, created_at);
   `);
+  addColumnIfMissing(db, "group_assets", "selected", "INTEGER NOT NULL DEFAULT 1");
+  addColumnIfMissing(db, "group_assets", "duplicate_of_asset_id", "TEXT");
+  addColumnIfMissing(db, "group_assets", "duplicate_reason", "TEXT");
+}
+
+function addColumnIfMissing(db: AppDatabase, table: string, column: string, definition: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!columns.some((item) => item.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }

@@ -35,6 +35,20 @@ npm run dev:web
 
 Abre `http://localhost:5173`.
 
+La documentacion interactiva de la API queda disponible en `http://localhost:3001/docs`.
+
+Tambien puedes levantar el entorno local completo con Make:
+
+```bash
+make dev
+```
+
+Puertos en desarrollo local:
+
+- Web: `http://localhost:5173`
+- API: `http://localhost:3001`
+- API docs: `http://localhost:3001/docs`
+
 Los límites de carga predeterminados son 200 imágenes y 100 MB por archivo. Se pueden ajustar con:
 
 ```bash
@@ -50,6 +64,19 @@ EMBEDDING_PROVIDER=clip npm run dev:worker
 
 La primera ejecución descarga `Xenova/clip-vit-base-patch32`. El modelo se puede cambiar con `CLIP_MODEL`.
 
+Para agrupar con embeddings multimodales de Gemini y generar contexto/captions:
+
+```bash
+GEMINI_API_KEY=tu_clave EMBEDDING_PROVIDER=gemini CAPTION_PROVIDER=gemini npm run dev:worker
+```
+
+Modelos configurables:
+
+```bash
+GEMINI_EMBEDDING_MODEL=gemini-embedding-2
+GEMINI_VISION_MODEL=gemini-2.5-flash
+```
+
 ## Docker
 
 ```bash
@@ -57,6 +84,13 @@ docker compose up --build
 ```
 
 El dashboard estará disponible en `http://localhost:8080`. API y worker comparten volúmenes persistentes para SQLite y fotografías.
+
+En Docker:
+
+- Web: `http://localhost:8080`
+- API: `http://localhost:3001`
+- API docs directa: `http://localhost:3001/docs`
+- API docs via Nginx: `http://localhost:8080/docs`
 
 ## Verificación
 

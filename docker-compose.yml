@@ -24,6 +24,10 @@ services:
       DATABASE_PATH: /app/data/app.db
       STORAGE_PATH: /app/storage
       EMBEDDING_PROVIDER: local
+      CAPTION_PROVIDER: ""
+      GEMINI_API_KEY: ""
+      GEMINI_EMBEDDING_MODEL: gemini-embedding-2
+      GEMINI_VISION_MODEL: gemini-2.5-flash
     volumes:
       - app-data:/app/data
       - app-storage:/app/storage

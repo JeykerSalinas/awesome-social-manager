@@ -33,3 +33,33 @@ export interface ClusterResult {
   label: string;
   reason: string;
 }
+
+export interface GroupContext {
+  groupLabel: string;
+  context: string;
+  scene: string;
+  placeName: string | null;
+  topics: string[];
+  lighting: string;
+  confidence: number;
+}
+
+export interface CaptionProposal {
+  groupLabel: string;
+  context: string;
+  caption: string;
+  hashtags: string[];
+  altText: Array<{
+    assetId: string;
+    text: string;
+  }>;
+  confidence: number;
+}
+
+export interface GroupImageInput {
+  assetId: string;
+  path: string;
+  mime: string;
+  qualityScore: number;
+  capturedAt: string | null;
+}

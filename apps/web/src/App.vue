@@ -17,6 +17,9 @@ interface Asset {
   originalName: string;
   status: string;
   error: string | null;
+  selected: boolean;
+  duplicateOfAssetId: string | null;
+  duplicateReason: string | null;
   thumbnailUrl: string | null;
   features: Features | null;
 }
@@ -37,6 +40,23 @@ interface Group {
   label: string;
   confidence: number;
   reason: string;
+  context: {
+    provider: string;
+    model: string;
+    groupLabel: string;
+    context: string | null;
+    error?: string;
+    confidence: number;
+  } | null;
+  proposal: {
+    id: string;
+    caption: string;
+    hashtags: string[];
+    altText: Array<{ assetId: string; text: string }>;
+    status: string;
+    provider: string;
+    confidence: number;
+  } | null;
   assets: Asset[];
 }
 
@@ -130,6 +150,60 @@ async function saveLabel(group: Group) {
     body: JSON.stringify({ label: group.label }),
   });
   message.value = response.ok ? "Nombre del grupo guardado." : "No se pudo guardar el nombre.";
+}
+
+async function toggleAsset(group: Group, asset: Asset) {
+  const nextSelected = !asset.selected;
+  const response = await fetch(`${apiUrl}/api/groups/${group.id}/assets/${asset.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ selected: nextSelected }),
+  });
+  if (!response.ok) {
+    message.value = "No se pudo actualizar la selección.";
+    return;
+  }
+  asset.selected = nextSelected;
+  if (nextSelected) {
+    asset.duplicateOfAssetId = null;
+    asset.duplicateReason = null;
+  }
+}
+
+async function saveProposal(group: Group) {
+  if (!group.proposal) return;
+  const response = await fetch(`${apiUrl}/api/proposals/${group.proposal.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ caption: group.proposal.caption, hashtags: group.proposal.hashtags }),
+  });
+  message.value = response.ok ? "Propuesta guardada." : "No se pudo guardar la propuesta.";
+  if (response.ok) group.proposal.status = "EDITED";
+}
+
+function hashtagText(group: Group) {
+  return group.proposal?.hashtags.join(" ") ?? "";
+}
+
+function updateHashtags(group: Group, value: string) {
+  if (!group.proposal) return;
+  group.proposal.hashtags = value
+    .split(/\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+function altTextFor(group: Group, assetId: string) {
+  return group.proposal?.altText.find((item) => item.assetId === assetId)?.text ?? "";
+}
+
+function selectedCount(group: Group) {
+  return group.assets.filter((asset) => asset.selected).length;
+}
+
+function duplicateCount(group: Group) {
+  return group.assets.filter((asset) => !asset.selected).length;
 }
 
 async function retry() {
@@ -257,14 +331,35 @@ function statusLabel(status: string) {
           <div class="group-copy">
             <input v-model="group.label" class="group-label" @change="saveLabel(group)" />
             <p>{{ group.reason }} · confianza {{ percent(group.confidence) }}</p>
+            <p>{{ selectedCount(group) }} seleccionadas · {{ duplicateCount(group) }} similares excluidas</p>
+            <div v-if="group.context || group.proposal" class="proposal-panel">
+              <p v-if="group.context?.error" class="proposal-error">{{ group.context.error }}</p>
+              <p v-else-if="group.context" class="proposal-context">{{ group.context.context }}</p>
+              <textarea v-if="group.proposal" v-model="group.proposal.caption" class="caption-input" maxlength="2200" />
+              <input
+                v-if="group.proposal"
+                class="hashtags-input"
+                :value="hashtagText(group)"
+                @input="updateHashtags(group, ($event.target as HTMLInputElement).value)"
+              />
+              <button v-if="group.proposal" class="secondary" type="button" @click="saveProposal(group)">
+                Guardar propuesta
+              </button>
+            </div>
           </div>
           <div class="photo-strip">
-            <figure v-for="asset in group.assets" :key="asset.id">
+            <figure v-for="asset in group.assets" :key="asset.id" :class="{ duplicate: !asset.selected }">
               <img :src="media(asset.thumbnailUrl)" :alt="asset.originalName" />
+              <button class="asset-toggle" type="button" :title="asset.selected ? 'Excluir foto' : 'Restaurar foto'" @click="toggleAsset(group, asset)">
+                {{ asset.selected ? '✓' : '+' }}
+              </button>
+              <span v-if="!asset.selected" class="duplicate-badge">Similar</span>
               <figcaption>
                 <span>{{ percent(asset.features?.qualityScore) }}</span>
                 <span>{{ asset.features?.capturedAt ? new Date(asset.features.capturedAt).toLocaleDateString('es') : 'sin fecha' }}</span>
               </figcaption>
+              <small v-if="altTextFor(group, asset.id)" class="alt-text">{{ altTextFor(group, asset.id) }}</small>
+              <small v-if="asset.duplicateReason" class="duplicate-reason">{{ asset.duplicateReason }}</small>
             </figure>
           </div>
         </article>
